@@ -113,11 +113,16 @@ function Pump.intercept_network(ctx, current_tick)
                 end
             end
 
-            -- STRICT CONSENSUS: Only acknowledge the actual temporal boundary of the payload,
-            -- NOT the sender's optimistic future tick.
             local payload_highest_tick = pkt.base_tick + pkt.history_count - 1
-            if payload_highest_tick > ctx.peer_highest_tick[pid] then
-                ctx.peer_highest_tick[pid] = payload_highest_tick
+
+            -- [!] FIXED: The Contiguous ACK Guard
+            -- Only advance consensus if the incoming packet perfectly overlaps or connects 
+            -- to our currently verified timeline. If pkt.base_tick is floating in the future, 
+            -- it means packets arrived out of order and we have a hole in reality.
+            if pkt.base_tick <= ctx.peer_highest_tick[pid] + 1 then
+                if payload_highest_tick > ctx.peer_highest_tick[pid] then
+                    ctx.peer_highest_tick[pid] = payload_highest_tick
+                end
             end
 
             if pkt.checksum_tick > 0 and pkt.checksum_tick >= math.max(0, ctx.rollback_arena.confirmed_tick - cfg_net.DESYNC_SWEEP) and pkt.checksum_tick <= current_tick then
