@@ -18,6 +18,7 @@ function Pump.send_dynamic_history(ctx)
 
             pkt.session_token = ctx.session_token
             pkt.player_id = ctx.net_identity
+            pkt._align_pad = p -- [!] SSoT: Stamp the intended destination ID
             pkt.frame_tick = current_tick
             pkt.ack_tick = ctx.peer_highest_tick[p]
 
@@ -66,6 +67,12 @@ function Pump.intercept_network(ctx, current_tick)
     for i = 0, count - 1 do
         local pkt = global_in_buffer[i]
         local pid = pkt.player_id
+
+        -- [!] SSoT: Shotgun Relay Cross-Talk Filter
+        -- Discard any broadcast packets not explicitly addressed to our local node.
+        if pkt._align_pad ~= ctx.net_identity then
+            goto continue_inbox
+        end
 
         if pkt.frame_tick < ctx.rollback_arena.confirmed_tick then
             goto continue_inbox
