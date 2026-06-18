@@ -86,7 +86,7 @@ local function get_local_ip()
     return res
 end
 
-local json = require("json_util") 
+local json = require("json_util")
 
 print("Enter Node ID (0-7) OR Preferred Local Port (e.g., 50000): ")
 io.write("> ")
@@ -132,7 +132,7 @@ io.write("> ")
 local mode_input = io.read("*l"):upper()
 
 local lobby_id = ""
-local session_token = nil 
+local session_token = nil
 
 local payload_tbl = {
     public_ip = my_pub_ip,
@@ -209,12 +209,12 @@ for i, p in ipairs(status_data.players) do
         active_peers[peer_id] = true
         if p.ip == my_pub_ip and p.local_ip == my_local_ip then
             net.Connect(peer_id, "127.0.0.1", tonumber(p.local_port))
-            p2p_established[peer_id] = true
-            print(string.format("[ICE] Node %d is local loopback. P2P bypassed.", peer_id))
+            -- [!] FIXED: Do not assume loopback works (Split-Brain Hack Support)
+            print(string.format("[ICE] Node %d is local loopback. Attempting direct blast...", peer_id))
         elseif p.ip == my_pub_ip then
             net.Connect(peer_id, p.local_ip, tonumber(p.local_port))
-            p2p_established[peer_id] = true
-            print(string.format("[ICE] Node %d is on LAN. Hairpin bypassed.", peer_id))
+            -- [!] FIXED: Do not assume LAN works. Force it to prove viability via ICE blast.
+            print(string.format("[ICE] Node %d is on LAN. Attempting hairpin bypass blast...", peer_id))
         else
             net.Connect(peer_id, p.ip, tonumber(p.port))
         end
