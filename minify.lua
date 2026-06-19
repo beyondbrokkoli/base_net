@@ -82,9 +82,9 @@ local order = {
     -- [ ENTRY POINTS ]
     "lua/structs.lua",
     "lua/config_net.lua",
---    "lua/config_engine.lua",
---    "lua/sim_world.lua",
---    "lua/sim_rng.lua",
+    "lua/config_engine.lua",
+    "lua/sim_world.lua",
+    "lua/sim_rng.lua",
 --    "lua/registry_export.lua",
 --    "build.lua",
 --    "c/shared_structs.h",
