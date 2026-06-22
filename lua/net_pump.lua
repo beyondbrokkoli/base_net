@@ -14,7 +14,7 @@ function Pump.init(app_ctx)
     local DESYNC_SWEEP    = app_ctx.cfg_net.DESYNC_SWEEP
 
     -- The Domain Boundary: Safely grabbing the flag from the active domain
-    local STATE_EMPTY     = app_ctx.cfg_sim.net_state.empty
+    local STATE_EMPTY     = app_ctx.cfg_net.net_state.empty
 
     local CHAOS_PACKET_LOSS = 0.0
 
