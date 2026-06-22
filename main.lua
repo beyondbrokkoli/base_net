@@ -441,7 +441,7 @@ local function main()
     local ctx = {
         session_token = session_token,
         net_identity = local_id,
-        sim_tick_count = 1, 
+        sim_tick_count = 1,
         accumulator = 0.0,
         net_accumulator = 0.0,
         total_tiles = cfg_sim.world.map_width * cfg_sim.world.map_height,

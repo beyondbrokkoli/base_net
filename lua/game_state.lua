@@ -37,21 +37,23 @@ function Game.init(app_ctx)
             state.rng_state[0] = bit.bxor(ptr[0], ptr[1])
             if state.rng_state[0] == 0 then state.rng_state[0] = 0x811C9DC5 end
 
-            -- 2. Initial World State Painting
+            -- 2. Initial World State Painting (ISOLATED TO LAYER 0)
             local cx = math.floor(map_width / 2)
             local cz = math.floor(map_height / 2)
             local w = map_width
 
-            for p = 0, MAX_PLAYERS - 1 do
-                state.terrain[p][cz * w + cx] = 10
-                for x = cx + 1, cx + 5 do state.terrain[p][cz * w + x] = 11 end
-                for z = cz + 1, cz + 5 do state.terrain[p][z * w + cx] = 12 end
+            -- Paint the diagnostic template strictly onto Layer 0 to prevent Z-fighting
+            state.terrain[0][cz * w + cx] = 10
+            for x = cx + 1, cx + 5 do state.terrain[0][cz * w + x] = 11 end
+            for z = cz + 1, cz + 5 do state.terrain[0][z * w + cx] = 12 end
 
-                state.terrain[p][(cz - 5) * w + (cx - 5)] = 13
-                state.terrain[p][(cz - 5) * w + (cx + 5)] = 13
-                state.terrain[p][(cz + 5) * w + (cx - 5)] = 13
-                state.terrain[p][(cz + 5) * w + (cx + 5)] = 13
-            end
+            state.terrain[0][(cz - 5) * w + (cx - 5)] = 13
+            state.terrain[0][(cz - 5) * w + (cx + 5)] = 13
+            state.terrain[0][(cz + 5) * w + (cx - 5)] = 13
+            state.terrain[0][(cz + 5) * w + (cx + 5)] = 13
+
+            -- (Optional) If you wanted to test player-specific colors, you could assign
+            -- a single tile to each player ID here, rather than full overlap.
 
             return state
         end,
