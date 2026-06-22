@@ -42,8 +42,6 @@ function Game.init(app_ctx)
             local cz = math.floor(map_height / 2)
             local w = map_width
 
-            -- We need Fixed math to set the elevation correctly
-            local Fixed = require("fixed_math")
             local elev_val = Fixed.from_float(15.0)
 
             -- Center (White)

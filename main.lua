@@ -572,6 +572,74 @@ local function main()
             last_resize_time = get_time_hires()
         end
 
+        local current_time = get_time_hires()
+        local frame_time = math.max(0.001, math.min(current_time - last_time, 0.25))
+        last_time = current_time
+
+        local mouse_left = ffi.C.vx_input_mouse_btn(0)
+        local mouse_x = ffi.C.vx_input_mouse_x()
+        local mouse_y = ffi.C.vx_input_mouse_y()
+
+        if mouse_left == 1 and prev_mouse_left == 0 then
+            local click_x = ffi.C.vx_input_click_x()
+            local click_y = ffi.C.vx_input_click_y()
+
+            local clicked_idx = matrix_raycast_terrain(
+               click_x, click_y, sc.extent.width, sc.extent.height,
+               inv_vp, ctx.rts_grid, ctx.net_identity
+            )
+
+            if clicked_idx ~= 65535 then
+                local is_elevated = false
+                for peer = 0, cfg_net.MAX_PLAYERS - 1 do
+                    if ctx.rts_grid.elevation[peer][clicked_idx] > 0 then
+                        is_elevated = true
+                        break
+                    end
+                end
+
+                if is_elevated then
+                    EngineSubmitCommand(ctx, 2, 0, 0, clicked_idx)
+                else
+                    EngineSubmitCommand(ctx, 1, 0, 0, clicked_idx)
+                end
+            end
+        end
+        prev_mouse_left = mouse_left
+
+        Pump.intercept_network(ctx, ctx.sim_tick_count)
+
+        ctx.accumulator = ctx.accumulator + frame_time
+        ctx.net_accumulator = ctx.net_accumulator + frame_time
+
+        FSM.tick_playing_state(ctx, FIXED_DT)
+
+        if ctx.net_accumulator >= FIXED_DT then
+            Pump.send_dynamic_history(ctx)
+            ctx.net_accumulator = ctx.net_accumulator % FIXED_DT
+        end
+
+        if current_time - last_heartbeat >= 1.0 then
+            last_heartbeat = current_time
+            print(string.format("\n[HEARTBEAT] Sim Tick: %d | Confirmed: %d | Accum: %.4f",
+                ctx.sim_tick_count, ctx.rollback_arena.confirmed_tick, ctx.accumulator))
+
+            for p = 0, cfg_net.MAX_PLAYERS - 1 do
+                if ctx.peer_active[p] and p ~= ctx.net_identity then
+                    print(string.format("  -> [DIAGNOSTIC] Peer %d | Highest Tick: %d | AckOfMe: %d",
+                        p, ctx.peer_highest_tick[p], ctx.peer_ack_of_me[p]))
+                end
+            end
+        end
+
+        local last_key = ffi.C.vx_input_last_key()
+        if last_key == cfg_gfx.key.esc then ffi.C.vx_core_shutdown()
+        elseif last_key == cfg_gfx.key.f5 then wants_hotswap = true
+        elseif last_key == cfg_gfx.key.num1 then active_render_mode = cfg_gfx.mode.dual
+        elseif last_key == cfg_gfx.key.num2 then active_render_mode = cfg_gfx.mode.geom
+        elseif last_key == cfg_gfx.key.num3 then active_render_mode = cfg_gfx.mode.points
+        end
+
         if is_resizing then
             if (get_time_hires() - last_resize_time) > RESIZE_COOLDOWN then
                 local new_w, new_h = ffi.new("int[1]"), ffi.new("int[1]")
@@ -627,74 +695,6 @@ local function main()
                     print("[LUA CO] Async Transfer Complete! Palette Haven Online.")
                     palette_ready = true
                 end
-            end
-
-            local current_time = get_time_hires()
-            local frame_time = math.max(0.001, math.min(current_time - last_time, 0.25))
-            last_time = current_time
-
-            local mouse_left = ffi.C.vx_input_mouse_btn(0)
-            local mouse_x = ffi.C.vx_input_mouse_x()
-            local mouse_y = ffi.C.vx_input_mouse_y()
-
-            if mouse_left == 1 and prev_mouse_left == 0 then
-                local click_x = ffi.C.vx_input_click_x()
-                local click_y = ffi.C.vx_input_click_y()
-
-                local clicked_idx = matrix_raycast_terrain(
-                   click_x, click_y, sc.extent.width, sc.extent.height,
-                   inv_vp, ctx.rts_grid, ctx.net_identity
-                )
-
-                if clicked_idx ~= 65535 then
-                    local is_elevated = false
-                    for peer = 0, cfg_net.MAX_PLAYERS - 1 do
-                        if ctx.rts_grid.elevation[peer][clicked_idx] > 0 then
-                            is_elevated = true
-                            break
-                        end
-                    end
-
-                    if is_elevated then
-                        EngineSubmitCommand(ctx, 2, 0, 0, clicked_idx)
-                    else
-                        EngineSubmitCommand(ctx, 1, 0, 0, clicked_idx)
-                    end
-                end
-            end
-            prev_mouse_left = mouse_left
-
-            Pump.intercept_network(ctx, ctx.sim_tick_count)
-
-            ctx.accumulator = ctx.accumulator + frame_time
-            ctx.net_accumulator = ctx.net_accumulator + frame_time
-
-            FSM.tick_playing_state(ctx, FIXED_DT)
-
-            if ctx.net_accumulator >= FIXED_DT then
-                Pump.send_dynamic_history(ctx)
-                ctx.net_accumulator = ctx.net_accumulator % FIXED_DT
-            end
-
-            if current_time - last_heartbeat >= 1.0 then
-                last_heartbeat = current_time
-                print(string.format("\n[HEARTBEAT] Sim Tick: %d | Confirmed: %d | Accum: %.4f",
-                    ctx.sim_tick_count, ctx.rollback_arena.confirmed_tick, ctx.accumulator))
-
-                for p = 0, cfg_net.MAX_PLAYERS - 1 do
-                    if ctx.peer_active[p] and p ~= ctx.net_identity then
-                        print(string.format("  -> [DIAGNOSTIC] Peer %d | Highest Tick: %d | AckOfMe: %d",
-                            p, ctx.peer_highest_tick[p], ctx.peer_ack_of_me[p]))
-                    end
-                end
-            end
-
-            local last_key = ffi.C.vx_input_last_key()
-            if last_key == cfg_gfx.key.esc then ffi.C.vx_core_shutdown()
-            elseif last_key == cfg_gfx.key.f5 then wants_hotswap = true
-            elseif last_key == cfg_gfx.key.num1 then active_render_mode = cfg_gfx.mode.dual
-            elseif last_key == cfg_gfx.key.num2 then active_render_mode = cfg_gfx.mode.geom
-            elseif last_key == cfg_gfx.key.num3 then active_render_mode = cfg_gfx.mode.points
             end
 
             total_time = total_time + frame_time
