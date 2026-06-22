@@ -1,12 +1,15 @@
 -- lua/registry_export.lua
 local structs_mod = require("structs")
 
--- Dual-source from the split domain configs
 local cfg_gfx = nil
 pcall(function() cfg_gfx = require("config_gfx") end)
 
 local cfg_sim = nil
 pcall(function() cfg_sim = require("config_sim") end)
+
+-- [NEW] Fetch the network config
+local cfg_net = nil
+pcall(function() cfg_net = require("config_net") end)
 
 local reg = nil
 pcall(function() reg = require("registry_vk") end)
@@ -45,26 +48,24 @@ local function generate_ssot(glsl_path, c_header_path)
         end
     end
 
-    -- 2B. EXPORT NETWORK SIMULATION STATES (From Domain A: Simulation)
-    if cfg_sim then
-        if cfg_sim.net_state then
-            for _, k in ipairs(get_sorted_keys(cfg_sim.net_state)) do
-                c_hdr:write(string.format("#define FRAME_STATE_%s %d\n", string.upper(k), cfg_sim.net_state[k]))
-            end
+    -- 2B. EXPORT NETWORK SIMULATION STATES (From Engine Memory Domain)
+    if cfg_net and cfg_net.net_state then
+        for _, k in ipairs(get_sorted_keys(cfg_net.net_state)) do
+            c_hdr:write(string.format("#define FRAME_STATE_%s %d\n", string.upper(k), cfg_net.net_state[k]))
         end
+    end
 
-        -- 2C. EXPORT DIMENSIONAL MANIFESTO VALUES
-        if cfg_sim.world then
-            for _, k in ipairs(get_sorted_keys(cfg_sim.world)) do
-                local val = cfg_sim.world[k]
-                if type(val) == "number" then
-                    if math.floor(val) == val then
-                        glsl:write(string.format("const uint WORLD_%s = %dU;\n", string.upper(k), val))
-                        c_hdr:write(string.format("#define WORLD_%s %d\n", string.upper(k), val))
-                    else
-                        glsl:write(string.format("const float WORLD_%s = %.1f;\n", string.upper(k), val))
-                        c_hdr:write(string.format("#define WORLD_%s %.1ff\n", string.upper(k), val))
-                    end
+    -- 2C. EXPORT DIMENSIONAL MANIFESTO VALUES (From Domain A: Simulation)
+    if cfg_sim and cfg_sim.world then
+        for _, k in ipairs(get_sorted_keys(cfg_sim.world)) do
+            local val = cfg_sim.world[k]
+            if type(val) == "number" then
+                if math.floor(val) == val then
+                    glsl:write(string.format("const uint WORLD_%s = %dU;\n", string.upper(k), val))
+                    c_hdr:write(string.format("#define WORLD_%s %d\n", string.upper(k), val))
+                else
+                    glsl:write(string.format("const float WORLD_%s = %.1f;\n", string.upper(k), val))
+                    c_hdr:write(string.format("#define WORLD_%s %.1ff\n", string.upper(k), val))
                 end
             end
         end
