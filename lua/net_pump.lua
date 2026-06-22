@@ -6,37 +6,31 @@ local Pump = {}
 
 -- The module only initializes when main.lua injects the Application Context
 function Pump.init(app_ctx)
-    -- =========================================================
     -- 1. CACHE LUAJIT UPVALUES (Zero-cost lookups in hot loops)
-    -- =========================================================
     local RING_MASK       = app_ctx.cfg_net.RING_MASK
     local HISTORY_HORIZON = app_ctx.cfg_net.HISTORY_HORIZON
     local HISTORY_LEN     = app_ctx.cfg_net.HISTORY_LEN
     local MAX_PLAYERS     = app_ctx.cfg_net.MAX_PLAYERS
     local DESYNC_SWEEP    = app_ctx.cfg_net.DESYNC_SWEEP
-    
+
     -- The Domain Boundary: Safely grabbing the flag from the active domain
     local STATE_EMPTY     = app_ctx.cfg_sim.net_state.empty
 
     local CHAOS_PACKET_LOSS = 0.0
 
-    -- =========================================================
     -- 2. PERSISTENT BUFFERS (Safely scoped to this engine instance)
     -- Note: This requires 'structs.lua' to be loaded in main.lua prior to init.
-    -- =========================================================
     local max_packet_size = 2048
     local tx_buffer = ffi.new("uint8_t[?]", max_packet_size)
     local header_size = ffi.offsetof("LockstepPacket", "commands")
 
     local global_out_pkt = ffi.new("LockstepPacket")
     local scratch_in_pkt = ffi.new("LockstepPacket") -- Decompression target
-    
+
     local MAX_BURST_PACKETS = 256
     local global_in_buffer = ffi.new("RxPacket[?]", MAX_BURST_PACKETS)
 
-    -- =========================================================
     -- 3. THE EXECUTABLE CLOSURE
-    -- =========================================================
     return {
         send_dynamic_history = function(ctx)
             local current_tick = ctx.rollback_arena.head_tick
