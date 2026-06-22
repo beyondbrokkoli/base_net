@@ -22,4 +22,11 @@ ConfigNet.RELAY_PORT = 49152
 -- I/O Limits
 ConfigNet.MAX_BURST_PACKETS = 256
 
+-- Lockstep state flags for C-header export
+ConfigNet.net_state = {
+    empty = 0,
+    predicted = 1,
+    confirmed = 2
+}
+
 return ConfigNet
