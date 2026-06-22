@@ -37,23 +37,41 @@ function Game.init(app_ctx)
             state.rng_state[0] = bit.bxor(ptr[0], ptr[1])
             if state.rng_state[0] == 0 then state.rng_state[0] = 0x811C9DC5 end
 
-            -- 2. Initial World State Painting (ISOLATED TO LAYER 0)
+            -- 2. Initial World State Painting (ISOLATED TO LAYER 0 & ELEVATED)
             local cx = math.floor(map_width / 2)
             local cz = math.floor(map_height / 2)
             local w = map_width
 
-            -- Paint the diagnostic template strictly onto Layer 0 to prevent Z-fighting
+            -- We need Fixed math to set the elevation correctly
+            local Fixed = require("fixed_math")
+            local elev_val = Fixed.from_float(15.0)
+
+            -- Center (White)
             state.terrain[0][cz * w + cx] = 10
-            for x = cx + 1, cx + 5 do state.terrain[0][cz * w + x] = 11 end
-            for z = cz + 1, cz + 5 do state.terrain[0][z * w + cx] = 12 end
+            state.elevation[0][cz * w + cx] = elev_val
 
-            state.terrain[0][(cz - 5) * w + (cx - 5)] = 13
-            state.terrain[0][(cz - 5) * w + (cx + 5)] = 13
-            state.terrain[0][(cz + 5) * w + (cx - 5)] = 13
-            state.terrain[0][(cz + 5) * w + (cx + 5)] = 13
+            -- Arms (Red / Blue)
+            for x = cx + 1, cx + 5 do
+                state.terrain[0][cz * w + x] = 11
+                state.elevation[0][cz * w + x] = elev_val
+            end
+            for z = cz + 1, cz + 5 do
+                state.terrain[0][z * w + cx] = 12
+                state.elevation[0][z * w + cx] = elev_val
+            end
 
-            -- (Optional) If you wanted to test player-specific colors, you could assign
-            -- a single tile to each player ID here, rather than full overlap.
+            -- Corners (Red)
+            local corners = {
+                (cz - 5) * w + (cx - 5),
+                (cz - 5) * w + (cx + 5),
+                (cz + 5) * w + (cx - 5),
+                (cz + 5) * w + (cx + 5)
+            }
+
+            for _, idx in ipairs(corners) do
+                state.terrain[0][idx] = 13
+                state.elevation[0][idx] = elev_val
+            end
 
             return state
         end,
