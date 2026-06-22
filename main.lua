@@ -9,26 +9,34 @@ local json_util = require("json_util")
 local structs = require("structs")
 local reg_vk  = require("registry_vk")
 
--- 2. STANDARD MODULES
+-- STRICT DOMAIN ISOLATION REQUIRES:
+-- Only main.lua is allowed to do this.
+local cfg_gfx = require("config_gfx")
+local cfg_sim = require("config_sim")
+local cfg_net = require("config_net")
+
+-- 2. BUILD THE MASTER APPLICATION CONTEXT
+local app_ctx = {
+    cfg_gfx = cfg_gfx,
+    cfg_sim = cfg_sim,
+    cfg_net = cfg_net
+}
+
+-- 3. INJECT CONTEXT INTO DECOUPLED MODULES
+
 local math = require("math")
 local vmath = require("vmath")
-local seq = require("sequence")
-
--- STRICT DOMAIN ISOLATION REQUIRES:
-local cfg_gfx = require("config_gfx") -- Replaces cfg for win, sys, keys, mode
-local cfg_sim = require("config_sim") -- Replaces cfg for world size
-local cfg_net = require("config_net") -- Remains for networking constants
-
 local manifest = require("pipeline_manifest")
-local render_queue = require("render_queue")
-
--- 3. NETCODE MODULES
 local net = require("network")
-local FSM = require("fsm_core")
-local Pump = require("net_pump")
-local Game = require("game_state")
-
 local Fixed = require("fixed_math")
+
+local seq = require("sequence").init(app_ctx)
+local render_queue = require("render_queue").init(app_ctx)
+
+-- The Domain & Temporal Engine
+local Game = require("game_state").init(app_ctx)
+local Pump = require("net_pump").init(app_ctx)
+local FSM = require("fsm_core").init(app_ctx, Game) -- FSM is now 100% domain-agnostic
 
 -- 4. C-CORE INTERFACES
 ffi.cdef[[
@@ -174,12 +182,12 @@ local function BootstrapNetworkTopology(local_port, my_local_ip)
         print("Enter Target Lobby Size (2-8):")
         io.write("> ")
         local target_size = tonumber(io.read("*l")) or 2
-        target_size = math.max(2, math.min(8, target_size)) -- Clamp to engine limits
+        target_size = math.max(2, math.min(8, target_size))
 
         local host_payload = json_util.encode({
             public_ip = my_pub_ip, public_port = my_pub_port,
             local_ip = my_local_ip, local_port = local_port,
-            target_size = target_size -- Inject dynamic size
+            target_size = target_size 
         })
 
         print(string.format("[MATCHMAKER] Requesting new lobby for %d players...", target_size))
@@ -250,7 +258,6 @@ local function BootstrapNetworkTopology(local_port, my_local_ip)
     if real_time_remaining > 0 then
         print(string.format("[ICE] Quorum locked. Initiating Mutual Handshake for %.2f seconds...", real_time_remaining))
 
-        -- [!] NEW: Use the dynamic header size and RxPacket buffer
         local header_size = ffi.offsetof("LockstepPacket", "commands")
         local scratch_handshake = ffi.new("LockstepPacket")
         local handshake_buffer = ffi.new("RxPacket[32]")
@@ -265,7 +272,6 @@ local function BootstrapNetworkTopology(local_port, my_local_ip)
                     ping_pkt.player_id = local_id
                     ping_pkt.frame_tick = p2p_heard[peer_id] and 1 or 0
 
-                    -- [!] Send ONLY the 60-byte header. Zero MTU fragmentation!
                     net.SendTo(ping_pkt, header_size, peer_id)
                 end
             end
@@ -274,7 +280,6 @@ local function BootstrapNetworkTopology(local_port, my_local_ip)
             for i = 0, count - 1 do
                 local rx_pkt = handshake_buffer[i]
 
-                -- [!] Extract the C-side raw data into our Lua struct
                 ffi.copy(scratch_handshake, rx_pkt.data, header_size)
 
                 if scratch_handshake.session_token == session_token then
@@ -309,7 +314,6 @@ local function BootstrapNetworkTopology(local_port, my_local_ip)
     reg_pkt.player_id = local_id
     reg_pkt.frame_tick = 0
 
-    -- [!] Use the same 60-byte cutoff here
     local header_size = ffi.offsetof("LockstepPacket", "commands")
     net.SendTo(reg_pkt, header_size, cfg_net.MAX_PLAYERS)
 
@@ -365,7 +369,6 @@ end
 local temp_vec_near = ffi.new("vec4_t")
 local temp_vec_far = ffi.new("vec4_t")
 
--- [UPDATED] Added net_identity to signature
 local function matrix_raycast_terrain(mouse_x, mouse_y, screen_w, screen_h, viewProj_inv, grid, net_identity)
     local nx = (mouse_x / screen_w) * 2.0 - 1.0
     local ny = (mouse_y / screen_h) * 2.0 - 1.0
@@ -384,7 +387,7 @@ local function matrix_raycast_terrain(mouse_x, mouse_y, screen_w, screen_h, view
     dx, dy, dz = dx * inv_mag, dy * inv_mag, dz * inv_mag
 
     local t = 0.0
-    local p = net_identity or 0 -- Default to 0 for safety
+    local p = net_identity or 0 
 
     if dy < 0.0 then
         local dist_to_ceiling = (10.0 - oy) / dy
@@ -402,7 +405,6 @@ local function matrix_raycast_terrain(mouse_x, mouse_y, screen_w, screen_h, view
         if grid_x >= 0 and grid_x < cfg_sim.world.map_width and grid_z >= 0 and grid_z < cfg_sim.world.map_height then
             local idx = grid_z * cfg_sim.world.map_width + grid_x
 
-            -- Reconstruct the exact composite height the GPU is rendering
             local max_elevation = 0
             for peer = 0, 7 do
                 local peer_elev = grid.elevation[peer][idx]
@@ -434,14 +436,12 @@ local function main()
     assert(net.Host(local_port), "FATAL: Failed to bind local socket port " .. local_port)
     local my_local_ip = get_local_ip()
 
-    -- Lock the topology before touching the GPU
     local session_token, local_id, p2p_established, active_peers, status_data = BootstrapNetworkTopology(local_port, my_local_ip)
 
-    -- Initialize the Unified Game Context
     local ctx = {
         session_token = session_token,
         net_identity = local_id,
-        sim_tick_count = 1, -- not deleting it here, correct?
+        sim_tick_count = 1, 
         accumulator = 0.0,
         net_accumulator = 0.0,
         total_tiles = cfg_sim.world.map_width * cfg_sim.world.map_height,
@@ -454,12 +454,10 @@ local function main()
         snapshot_ring = ffi.new(string.format("%s[%d]", Game.GetStateName(), cfg_net.RING_SIZE))
     }
 
-    -- Populate peer active states (The "Ghost Player" Trick)
     for p = 0, cfg_net.MAX_PLAYERS - 1 do
         if p < #status_data.players then
             ctx.peer_active[p] = true
         else
-            -- THESE ARE THE GHOSTS.
             ctx.peer_active[p] = false
         end
     end
@@ -513,7 +511,6 @@ local function main()
     pc.aos_current_idx, pc.aos_prev_idx = 0, 0
     pc.dt = 0.0
 
-    -- [ATTACK VECTOR 3] INITIALIZE GENERALIZED CAMERA
     local camera_mod = require("camera")
     local cam = camera_mod.new()
     local inv_vp = ffi.new("mat4_t")
@@ -533,16 +530,14 @@ local function main()
     print("[LUA CO] Packing Data-Driven Color Palette...")
     local staging_ptr = ffi.cast("float*", memory.Mapped["PALETTE_STAGING"])
 
-    -- Default/Player Colors
     staging_ptr[0] = 0.2; staging_ptr[1] = 0.8; staging_ptr[2] = 0.2; staging_ptr[3] = 1.0
     staging_ptr[4] = 0.2; staging_ptr[5] = 0.5; staging_ptr[6] = 1.0; staging_ptr[7] = 1.0
     staging_ptr[8] = 1.0; staging_ptr[9] = 0.2; staging_ptr[10] = 0.2; staging_ptr[11] = 1.0
 
-    -- Calibration Colors (Offsets: ID * 4)
-    staging_ptr[40] = 1.0; staging_ptr[41] = 1.0; staging_ptr[42] = 1.0; staging_ptr[43] = 1.0 -- 10: White (Center)
-    staging_ptr[44] = 1.0; staging_ptr[45] = 0.0; staging_ptr[46] = 0.0; staging_ptr[47] = 1.0 -- 11: Red (+X)
-    staging_ptr[48] = 0.0; staging_ptr[49] = 0.0; staging_ptr[50] = 1.0; staging_ptr[51] = 1.0 -- 12: Blue (+Z)
-    staging_ptr[52] = 1.0; staging_ptr[53] = 0.0; staging_ptr[54] = 0.0; staging_ptr[55] = 1.0 -- 13: Magenta (Corners)
+    staging_ptr[40] = 1.0; staging_ptr[41] = 1.0; staging_ptr[42] = 1.0; staging_ptr[43] = 1.0
+    staging_ptr[44] = 1.0; staging_ptr[45] = 0.0; staging_ptr[46] = 0.0; staging_ptr[47] = 1.0
+    staging_ptr[48] = 0.0; staging_ptr[49] = 0.0; staging_ptr[50] = 1.0; staging_ptr[51] = 1.0
+    staging_ptr[52] = 1.0; staging_ptr[53] = 0.0; staging_ptr[54] = 0.0; staging_ptr[55] = 1.0
 
     local palette_job_id = memory.TransferAsync("PALETTE_STAGING", "PALETTE_HAVEN", 16384)
     local palette_ready = false
@@ -552,7 +547,6 @@ local function main()
     local prev_mouse_left = 0
     local pending_click = 65535
 
-    -- [ATTACK VECTOR 1] PRE-COMPUTED VRAM TEMPLATE
     print("[LUA CO] Pre-computing Universal Geometry Template...")
     local vram_template = ffi.new("RtsTileInstance[?]", ctx.total_tiles)
     for z = 0, cfg_sim.world.map_height - 1 do
@@ -568,7 +562,6 @@ local function main()
 
     print("[NET] Scene loaded. Camera unlocked. Awaiting Timeline Synchronization...")
 
-    -- We must initialize the clocks out here so the camera has a delta-time immediately
     local last_time = get_time_hires()
     local last_heartbeat = get_time_hires()
 
@@ -654,7 +647,6 @@ local function main()
                 )
 
                 if clicked_idx ~= 65535 then
-                    -- 1. Read the composite reality to determine what the player actually sees
                     local is_elevated = false
                     for peer = 0, cfg_net.MAX_PLAYERS - 1 do
                         if ctx.rts_grid.elevation[peer][clicked_idx] > 0 then
@@ -663,19 +655,15 @@ local function main()
                         end
                     end
 
-                    -- 2. Toggle the Opcode based on the visual state
                     if is_elevated then
-                        -- Submit Opcode 2 (e.g., Demolish / Lower)
                         EngineSubmitCommand(ctx, 2, 0, 0, clicked_idx)
                     else
-                        -- Submit Opcode 1 (e.g., Build / Raise)
                         EngineSubmitCommand(ctx, 1, 0, 0, clicked_idx)
                     end
                 end
             end
             prev_mouse_left = mouse_left
 
-            -- THE PURE TEMPORAL ENGINE
             Pump.intercept_network(ctx, ctx.sim_tick_count)
 
             ctx.accumulator = ctx.accumulator + frame_time
@@ -712,7 +700,6 @@ local function main()
             total_time = total_time + frame_time
             pc.total_time = total_time
 
-            -- [ATTACK VECTOR 3] COMPACT CAM AND PROJECTION COUPLING
             camera_mod.update(cam, frame_time, mouse_x, mouse_y, sc.extent.width, sc.extent.height)
             camera_mod.get_matrices(cam, sc.extent.width, sc.extent.height, pc.viewProj, inv_vp)
 
@@ -759,7 +746,8 @@ local function main()
     net.Shutdown()
     memory.DestroyTransferSubsystem(vk_rt)
 
-    require("vulkan_core").Destroy(vk_rt)
+    -- [UPDATED] Pass cfg_gfx.cfg into the destruction sequence
+    require("vulkan_core").Destroy(vk_rt, cfg_gfx.cfg)
 
     print("[LUA IO] Teardown Complete. Safe Exit.")
 end
