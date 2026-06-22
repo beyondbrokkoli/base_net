@@ -27,7 +27,7 @@ function Pump.init(app_ctx)
     local global_out_pkt = ffi.new("LockstepPacket")
     local scratch_in_pkt = ffi.new("LockstepPacket") -- Decompression target
 
-    local MAX_BURST_PACKETS = 256
+    local MAX_BURST_PACKETS = app_ctx.cfg_net.MAX_BURST_PACKETS
     local global_in_buffer = ffi.new("RxPacket[?]", MAX_BURST_PACKETS)
 
     -- 3. THE EXECUTABLE CLOSURE

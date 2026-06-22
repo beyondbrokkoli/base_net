@@ -19,4 +19,7 @@ ConfigNet.STUN_PORT = 3478
 ConfigNet.RELAY_IP = "138.199.152.240"
 ConfigNet.RELAY_PORT = 49152
 
+-- I/O Limits
+ConfigNet.MAX_BURST_PACKETS = 256
+
 return ConfigNet
